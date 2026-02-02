@@ -128,7 +128,7 @@ function procesarCodigo(codigo) {
         codigoAFila[codigo] = inventario.length - 1;
     }
 
-    setResult(`✔ Código ${codigo} marcado como encontrado/it has been marked as found`, 'green');
+    setResultsetResult(`✔ Código <span style="font-weight: bold; color: black; font-size: 32px;">${codigo}</span> marcado como encontrado / it has been marked as found`, 'green');
     guardarInventario();
     actualizarTabla();
 }
