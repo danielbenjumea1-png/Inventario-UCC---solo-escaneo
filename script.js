@@ -5,10 +5,10 @@ let codigoAFila = {};
 let excelInicialCargado = false;
 let quaggaIniciado = false;
 
-// ---------- CARGA EXCEL INICIAL ----------
+// ---------- CARGA EXCEL INICIAL ---------- ESTO ES OPCIONAL; PARA INVENTARIOS CORTOS CON EXCEL YA AGREGADO PARA RECONOCIMIENTO DE CODIGOS; CRUCE AUTOMATICO
 async function cargarExcelInicial() {
     try {
-        console.log('Intentando cargar Excel desde GitHub...');
+        console.log('');
         const url = '';
         const response = await fetch(url);
         console.log('Respuesta del fetch:', response.status);
@@ -33,10 +33,10 @@ async function cargarExcelInicial() {
         actualizarMapeo();
         actualizarTabla();
         excelInicialCargado = true;
-        setResult('Inventario inicial cargado desde Excel.', 'blue');
+        setResult('Escaneo e inventario abierto para las bibliotecas del mundo. / Scanning and open inventory for the world’s libraries', 'blue');
     } catch (error) {
-        console.error('Error al cargar Excel inicial:', error);
-        setResult('No se pudo cargar el Excel inicial. Verifica la URL o agrega códigos manualmente. Error: ' + (error.message || error), 'orange');
+        console.error('', error);
+        setResult('' + (error.message || error), 'orange');
         // continuar sin bloquear
     }
 }
@@ -65,11 +65,11 @@ function actualizarMapeo() {
 // ---------- QUAGGA (cámara / escaneo) ----------
 function iniciarQuagga() {
     if (quaggaIniciado) {
-        setResult('La cámara ya está iniciada.', 'green');
+        setResult('La cámara ya está iniciada. / The camera is already started.', 'green');
         return;
     }
     if (typeof Quagga === 'undefined') {
-        setResult('Error: QuaggaJS no cargó. Verifica la conexión a internet.', 'red');
+        setResult('Error: QuaggaJS no cargó. Verifica la conexión a internet. / Error: QuaggaJS failed to load. Please check your internet connection.', 'red');
         return;
     }
 
@@ -91,21 +91,21 @@ function iniciarQuagga() {
     }, function(err) {
         if (err) {
             console.error('Quagga init error:', err);
-            setResult('Error: No se pudo acceder a la cámara. Permite permisos y toca "Iniciar Cámara" de nuevo.', 'red');
+            setResult('Error: No se pudo acceder a la cámara. Permite permisos y toca "Iniciar Cámara" de nuevo. / Camera access failed. Please allow permissions and tap "Start Camera" again.', 'red');
             return;
         }
         Quagga.start();
         quaggaIniciado = true;
         const camEl = document.getElementById('camaraIndicador');
         if (camEl) camEl.style.display = 'block';
-        setResult('Cámara iniciada. Escanea un código.', 'green');
+        setResult('Cámara iniciada. Escanea un código. / Camera started. Please scan a code.', 'green');
     });
 
     Quagga.onDetected(function(result) {
         try {
             let code = result.codeResult.code || '';
             code = code.toString().toUpperCase().replace(/[^A-Z0-9]/g, '');
-            // Filtro según tu regla: inicia con 'B' y >=7 caracteres
+            // Filtro según la regla: inicia con 'B' y >=7 caracteres
             if (!code.startsWith('B') || code.length < 7) return;
             procesarCodigo(code);
         } catch (e) {
@@ -139,7 +139,7 @@ function procesarManual() {
     if (!el) return;
     const codigo = el.value.trim().toUpperCase();
     if (!codigo) {
-        alert('Ingresa un código válido.');
+        alert('Ingresa un código válido. / Enter a valid code.');
         return;
     }
     procesarCodigo(codigo);
@@ -179,7 +179,7 @@ function descargarExcel() {
 
 // ---------- RESET ----------
 function resetearInventario() {
-    if (!confirm('¿Seguro que quieres resetear el inventario? Se perderán cambios no guardados.')) return;
+    if (!confirm('¿Seguro que quieres resetear el inventario? Se perderán cambios no guardados. / Are you sure you want to reset the inventory? Unsaved changes will be lost.')) return;
     localStorage.removeItem('inventario');
     inventario = [];
     actualizarMapeo();
