@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "formidable": "^3.5.0"
+  }
+}
