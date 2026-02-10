@@ -237,45 +237,87 @@ safeAddListener('resetBtn', 'touchstart', resetearInventario);
     }
 })();
 
-async function cruzarInventarioExcel() {
-  const inv = document.getElementById("excelInventario").files[0];
-  const esc = document.getElementById("excelEscaneo").files[0];
+// ==========================================
+// MODULO CRUCE DE INVENTARIOS (INDEPENDIENTE)
+// ==========================================
 
-  if (!inv || !esc) {
-    alert("Selecciona ambos archivos Excel");
-    return;
-  }
-
-  const formData = new FormData();
-  formData.append("inventario", inv);
-  formData.append("escaneo", esc);
-
-  setResult("Procesando cruce de inventario...", "blue");
-
-  const response = await fetch("/api/cruzar-inventario", {
-    method: "POST",
-    body: formData
-  });
-
-  if (!response.ok) {
-    setResult("Error en el cruce de inventario", "red");
-    return;
-  }
-
-  const blob = await response.blob();
-  const url = window.URL.createObjectURL(blob);
-
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "inventario_cruzado.xlsx";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-
-  setResult("Cruce finalizado. Archivo descargado.", "green");
+// Mostrar / ocultar panel
+function toggleCruceInventario() {
+    const panel = document.getElementById("cruceInventarioPanel");
+    if (!panel) return;
+    panel.style.display = panel.style.display === "none" ? "block" : "none";
 }
 
-// Listener seguro
+// Simulación de progreso (UX)
+function simularProgreso() {
+    const barra = document.getElementById("progresoCruce");
+    const texto = document.getElementById("textoProgreso");
+    let progreso = 0;
+
+    return setInterval(() => {
+        if (progreso < 90) {
+            progreso += Math.random() * 7;
+            barra.style.width = `${Math.min(progreso, 90)}%`;
+            texto.textContent = `${Math.floor(progreso)}%`;
+        }
+    }, 300);
+}
+
+// Cruce principal
+async function cruzarInventarioExcel() {
+    const inv = document.getElementById("excelInventario").files[0];
+    const esc = document.getElementById("excelEscaneo").files[0];
+
+    if (!inv || !esc) {
+        alert("Selecciona ambos archivos Excel");
+        return;
+    }
+
+    const barra = document.getElementById("progresoCruce");
+    const texto = document.getElementById("textoProgreso");
+
+    barra.style.width = "0%";
+    texto.textContent = "0%";
+
+    const intervalo = simularProgreso();
+
+    const formData = new FormData();
+    formData.append("inventario", inv);
+    formData.append("escaneo", esc);
+
+    try {
+        const response = await fetch("/api/cruzar-inventario", {
+            method: "POST",
+            body: formData
+        });
+
+        if (!response.ok) throw new Error();
+
+        const blob = await response.blob();
+
+        clearInterval(intervalo);
+        barra.style.width = "100%";
+        texto.textContent = "100%";
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "inventario_cruzado.xlsx";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+
+    } catch (err) {
+        clearInterval(intervalo);
+        alert("Error durante el cruce de inventarios");
+    }
+}
+
+// Listeners seguros (clic + móvil)
+safeAddListener("toggleCruceBtn", "click", toggleCruceInventario);
+safeAddListener("toggleCruceBtn", "touchstart", toggleCruceInventario);
+
 safeAddListener("cruceExcelBtn", "click", cruzarInventarioExcel);
 safeAddListener("cruceExcelBtn", "touchstart", cruzarInventarioExcel);
+
 
