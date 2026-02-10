@@ -120,30 +120,37 @@
         <button id="procesarBtn" title="Procesa el código ingresado manualmente">Procesar Código Manual</button>
         <button id="descargarBtn" title="Descarga el inventario actualizado como archivo Excel">Descargar Inventario (Excel)</button>
         <button id="resetBtn" title="Borra todo el inventario y recarga desde Excel inicial">Resetear Inventario</button>
-<!-- =============================== -->
-<!-- CRUCE DE INVENTARIO (EXCEL vs EXCEL) -->
-<!-- =============================== -->
+    
+<!-- BOTÓN PARA MOSTRAR / OCULTAR CRUCE -->
+<button id="toggleCruceBtn">
+    Cruce de Inventarios (Excel)
+</button>
 
-<div style="margin-top: 20px; padding: 15px; border-top: 1px solid #ccc;">
-    <h3>Cruce de Inventario (Excel vs Excel)</h3>
+<!-- PANEL OCULTO DE CRUCE -->
+<div id="cruceInventarioPanel"
+     style="display:none; margin-top:20px; padding:15px; border:1px solid #ccc; border-radius:8px;">
 
-    <input type="file" id="excelInventario" accept=".xlsx,.xls">
-    <br><br>
+    <h3>Cruce de Inventarios</h3>
 
-    <input type="file" id="excelEscaneo" accept=".xlsx,.xls">
-    <br><br>
+    <label>Excel de Inventario</label><br>
+    <input type="file" id="excelInventario" accept=".xlsx,.xls"><br><br>
 
-    <button id="cruceExcelBtn">
-        Cruzar Inventario
-    </button>
-</div>
-        <table id="inventarioTable">
-            <thead>
-                <tr><th>Código</th><th>Estado</th></tr>
-            </thead>
-            <tbody></tbody>
-        </table>
+    <label>Excel de Escaneo</label><br>
+    <input type="file" id="excelEscaneo" accept=".xlsx,.xls"><br><br>
+
+    <button id="cruceExcelBtn">Iniciar Cruce</button>
+
+    <!-- PROGRESO -->
+    <div style="margin-top:15px;">
+        <div style="background:#eee; border-radius:5px;">
+            <div id="progresoCruce"
+                 style="width:0%; height:20px; background:#28a745;">
+            </div>
+        </div>
+        <p id="textoProgreso">0%</p>
     </div>
+</div>
+
 
     <!-- Modal para Guía de Uso -->
 <div id="guiaModal" class="modal">
