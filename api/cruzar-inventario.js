@@ -3,62 +3,39 @@ import formidable from "formidable";
 import fs from "fs";
 
 export const config = {
-  api: {
-    bodyParser: false
-  }
+  api: { bodyParser: false },
 };
 
 // ===============================
-// NORMALIZADOR UNIVERSAL
+// NORMALIZADOR ROBUSTO
 // ===============================
 function normalizarTexto(texto) {
   return String(texto || "")
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // quitar tildes
-    .replace(/\s+/g, " ")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, "")
+    .replace(/[^a-z0-9]/g, "")
     .trim();
 }
 
 // ===============================
-// DETECTOR INTELIGENTE DE COLUMNA
+// DETECTOR DE COLUMNA
 // ===============================
 function esColumnaCodigo(valor) {
   const texto = normalizarTexto(valor);
-
   const palabrasClave = [
-    "codigo",
-    "cod",
-    "codigo de barras",
-    "barcode",
-    "bar code",
-    "id",
-    "identificador",
-    "identificacao",
-    "identificacion",
-    "serial",
-    "serial number",
-    "item code",
-    "product code",
-    "sku",
-    "ean",
-    "upc"
+    "codigo","cod","codigo de barras","barcode","bar code","id","identificador",
+    "serial","serialnumber","itemcode","productcode","sku","ean","upc"
   ];
-
-  return palabrasClave.some(palabra =>
-    texto.includes(palabra)
-  );
+  return palabrasClave.some((p) => texto.includes(p));
 }
 
-function encontrarColumnaCodigo(worksheet) {
+function encontrarColumnaCodigo(row) {
   let columna = null;
-
-  worksheet.getRow(1).eachCell((cell, col) => {
-    if (esColumnaCodigo(cell.value)) {
-      columna = col;
-    }
+  row.eachCell((cell, col) => {
+    if (esColumnaCodigo(cell.value)) columna = col;
   });
-
   return columna;
 }
 
@@ -66,16 +43,11 @@ function encontrarColumnaCodigo(worksheet) {
 // HANDLER PRINCIPAL
 // ===============================
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Método no permitido" });
-  }
+  if (req.method !== "POST") return res.status(405).json({ error: "Método no permitido" });
 
   const form = formidable({ multiples: true });
-
   form.parse(req, async (err, fields, files) => {
-    if (err) {
-      return res.status(500).json({ error: err.message });
-    }
+    if (err) return res.status(500).json({ error: err.message });
 
     const inventarioFile = files.inventario?.[0];
     const escaneoFile = files.escaneo?.[0];
@@ -85,100 +57,93 @@ export default async function handler(req, res) {
     }
 
     try {
-      const wbInventario = new ExcelJS.Workbook();
-      const wbEscaneo = new ExcelJS.Workbook();
-
-      await wbInventario.xlsx.readFile(inventarioFile.filepath);
-      await wbEscaneo.xlsx.readFile(escaneoFile.filepath);
-
-      const wsInventario = wbInventario.worksheets[0];
-      const wsEscaneo = wbEscaneo.worksheets[0];
-
       // ===============================
-      // DETECTAR COLUMNA EN ESCANEO
-      // ===============================
-      const colCodigoEscaneo = encontrarColumnaCodigo(wsEscaneo);
-
-      if (!colCodigoEscaneo) {
-        return res.status(400).json({
-          error: "No se encontró columna tipo código en el Excel de escaneo"
-        });
-      }
-
-      // ===============================
-      // EXTRAER CODIGOS ESCANEADOS
+      // EXTRAER CODIGOS DEL ESCANEO
       // ===============================
       const codigosEscaneo = new Set();
+      const wbEscaneo = new ExcelJS.stream.xlsx.WorkbookReader(escaneoFile.filepath);
 
-      wsEscaneo.eachRow((row, i) => {
-        if (i === 1) return;
-
-        const valor = row.getCell(colCodigoEscaneo).value;
-        const codigo = normalizarTexto(valor);
-
-        if (codigo) {
-          codigosEscaneo.add(codigo);
+      for await (const worksheet of wbEscaneo) {
+        let colCodigoEscaneo = null;
+        for await (const row of worksheet) {
+          if (row.number === 1) {
+            colCodigoEscaneo = encontrarColumnaCodigo(row);
+            if (!colCodigoEscaneo) break;
+            continue;
+          }
+          if (colCodigoEscaneo) {
+            const valor = row.getCell(colCodigoEscaneo).value;
+            const codigo = normalizarTexto(valor?.toString());
+            if (codigo) codigosEscaneo.add(codigo);
+          }
         }
-      });
+      }
 
-      // ===============================
-      // DETECTAR COLUMNA EN INVENTARIO
-      // ===============================
-      const colCodigoInventario = encontrarColumnaCodigo(wsInventario);
-
-      if (!colCodigoInventario) {
-        return res.status(400).json({
-          error: "No se encontró columna tipo código en el Excel de inventario"
-        });
+      if (codigosEscaneo.size === 0) {
+        return res.status(400).json({ error: "No se encontraron códigos en el Excel de escaneo" });
       }
 
       // ===============================
-      // CRUCE Y MARCADO
+      // PROCESAR INVENTARIO
       // ===============================
-      let coincidencias = 0;
+      const wbInventarioReader = new ExcelJS.stream.xlsx.WorkbookReader(inventarioFile.filepath);
+      const workbook = new ExcelJS.stream.xlsx.WorkbookWriter({ filename: "/tmp/inventario_cruzado.xlsx" });
 
-      wsInventario.eachRow((row, i) => {
-        if (i === 1) return;
+      for await (const worksheetReader of wbInventarioReader) {
+        const ws = workbook.addWorksheet(worksheetReader.name);
+        let colCodigoInventario = null;
+        const noCoinciden = []; // para guardar códigos no encontrados
 
-        const cell = row.getCell(colCodigoInventario);
-        const codigo = normalizarTexto(cell.value);
+        for await (const rowReader of worksheetReader) {
+          const rowValues = [];
+          rowReader.eachCell({ includeEmpty: true }, (cell) => rowValues.push(cell.value));
 
-        if (codigosEscaneo.has(codigo)) {
-          cell.fill = {
-            type: "pattern",
-            pattern: "solid",
-            fgColor: { argb: "FF00FF00" }
-          };
-          coincidencias++;
+          if (rowReader.number === 1) {
+            colCodigoInventario = encontrarColumnaCodigo(rowReader);
+            ws.addRow(rowValues).commit();
+            continue;
+          }
+
+          if (colCodigoInventario) {
+            const codigo = normalizarTexto(rowValues[colCodigoInventario - 1]?.toString());
+            if (codigosEscaneo.has(codigo)) {
+              const newRow = ws.addRow(rowValues);
+              newRow.getCell(colCodigoInventario).fill = {
+                type: "pattern",
+                pattern: "solid",
+                fgColor: { argb: "FF00FF00" }, // verde
+              };
+              newRow.commit();
+              continue;
+            } else {
+              noCoinciden.push(rowValues); // almacenar para al final
+              continue;
+            }
+          }
+
+          ws.addRow(rowValues).commit();
         }
-      });
 
-      // ===============================
-      // RESPUESTA FINAL
-      // ===============================
-      const buffer = await wbInventario.xlsx.writeBuffer();
+        // ===============================
+        // AGREGAR CÓDIGOS NO COINCIDENTES AL FINAL
+        // ===============================
+        if (noCoinciden.length > 0) {
+          ws.addRow([]).commit(); // fila vacía para separar
+          ws.addRow(["Códigos NO encontrados"]).commit();
+          noCoinciden.forEach((fila) => {
+            ws.addRow(fila).commit();
+          });
+        }
+      }
 
-      res.setHeader(
-        "Content-Type",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-      );
+      await workbook.commit();
 
-      res.setHeader(
-        "Content-Disposition",
-        "attachment; filename=inventario_cruzado.xlsx"
-      );
-
+      const buffer = fs.readFileSync("/tmp/inventario_cruzado.xlsx");
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", "attachment; filename=inventario_cruzado.xlsx");
       res.send(buffer);
-
-      // Limpieza opcional
-      fs.unlinkSync(inventarioFile.filepath);
-      fs.unlinkSync(escaneoFile.filepath);
-
     } catch (error) {
-      return res.status(500).json({
-        error: "Error procesando archivos",
-        detalle: error.message
-      });
+      return res.status(500).json({ error: "Error procesando archivos", detalle: error.message });
     }
   });
 }
