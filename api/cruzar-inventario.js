@@ -6,12 +6,16 @@ export const config = {
   api: { bodyParser: false },
 };
 
-function limpiar(valor) {
-  if (!valor) return "";
-  return String(valor)
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, "")
-    .trim();
+// Detecta códigos reales (letras + números)
+function esCodigoValido(valor) {
+  if (!valor) return false;
+
+  const texto = String(valor).trim();
+
+  // Solo letras y números, entre 6 y 20 caracteres
+  const regex = /^[A-Za-z0-9]{6,20}$/;
+
+  return regex.test(texto);
 }
 
 export default async function handler(req, res) {
@@ -35,7 +39,6 @@ export default async function handler(req, res) {
 
     try {
 
-      // LEER COMO BUFFER (clave en Vercel)
       const inventarioBuffer = fs.readFileSync(inventarioFile.filepath);
       const escaneoBuffer = fs.readFileSync(escaneoFile.filepath);
 
@@ -48,34 +51,31 @@ export default async function handler(req, res) {
       const wsInventario = wbInventario.worksheets[0];
       const wsEscaneo = wbEscaneo.worksheets[0];
 
-      // =========================
+      // =====================
       // EXTRAER CODIGOS ESCANEADOS
-      // =========================
+      // =====================
       const codigosEscaneados = new Set();
-      let totalEscaneados = 0;
 
       wsEscaneo.eachRow(row => {
         row.eachCell(cell => {
-          const limpio = limpiar(cell.value);
-          if (limpio.length >= 5) {
-            codigosEscaneados.add(limpio);
-            totalEscaneados++;
+          const valor = String(cell.value || "").trim();
+          if (esCodigoValido(valor)) {
+            codigosEscaneados.add(valor);
           }
         });
       });
 
-      // =========================
-      // CRUCE TOTAL
-      // =========================
+      // =====================
+      // CRUCE EXACTO
+      // =====================
       let coincidencias = 0;
       const encontrados = new Set();
 
       wsInventario.eachRow(row => {
         row.eachCell(cell => {
-          const limpio = limpiar(cell.value);
-          if (!limpio) return;
+          const valor = String(cell.value || "").trim();
 
-          if (codigosEscaneados.has(limpio)) {
+          if (codigosEscaneados.has(valor)) {
 
             cell.fill = {
               type: "pattern",
@@ -84,17 +84,19 @@ export default async function handler(req, res) {
             };
 
             coincidencias++;
-            encontrados.add(limpio);
+            encontrados.add(valor);
           }
         });
       });
 
-      // =========================
+      // =====================
       // NO ENCONTRADOS
-      // =========================
-      const noEncontrados = [...codigosEscaneados].filter(c => !encontrados.has(c));
+      // =====================
+      const noEncontrados = [...codigosEscaneados]
+        .filter(c => !encontrados.has(c));
 
       if (noEncontrados.length > 0) {
+
         const inicio = wsInventario.rowCount + 2;
 
         wsInventario.getCell(`A${inicio}`).value =
@@ -105,13 +107,10 @@ export default async function handler(req, res) {
         });
       }
 
-      // =========================
-      // ESTADISTICA EN ARCHIVO
-      // =========================
       const resumenFila = wsInventario.rowCount + 2;
 
       wsInventario.getCell(`C${resumenFila}`).value =
-        `De ${totalEscaneados} códigos escaneados se hallaron ${coincidencias} coincidencias`;
+        `De ${codigosEscaneados.size} códigos escaneados se hallaron ${coincidencias} coincidencias`;
 
       const bufferFinal = await wbInventario.xlsx.writeBuffer();
 
@@ -127,7 +126,6 @@ export default async function handler(req, res) {
 
       res.send(bufferFinal);
 
-      // limpieza
       fs.unlinkSync(inventarioFile.filepath);
       fs.unlinkSync(escaneoFile.filepath);
 
