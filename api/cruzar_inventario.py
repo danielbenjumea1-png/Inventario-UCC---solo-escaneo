@@ -52,7 +52,11 @@ def cruzar_inventario():
             if codigo in codigos_escaneo:
                 ws.cell(row=row, column=col_codigo).fill = verde
                 coincidencias += 1
-
+                
+        for codigo in codigos_escaneo:
+            if codigo not in inventario_codigos:
+                ws.append([codigo])  # añade cada código en la primera columna al final
+                
         # Guardar Excel final en memoria
         final_buffer = io.BytesIO()
         wb.save(final_buffer)
