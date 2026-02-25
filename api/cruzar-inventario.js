@@ -6,54 +6,39 @@ export const config = {
 };
 
 /* =========================
-   NORMALIZADOR ROBUSTO
+   OBTENER VALOR REAL CELDA
 ========================= */
-function normalizarCodigo(valor) {
-  return String(valor || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // quitar tildes
-    .replace(/[^a-z0-9]/gi, "") // eliminar caracteres especiales
-    .trim();
+function obtenerValor(cell) {
+  if (!cell || cell.value == null) return "";
+
+  const v = cell.value;
+
+  if (typeof v === "string" || typeof v === "number") return String(v);
+  if (v.text) return String(v.text);
+  if (v.richText) return v.richText.map(r => r.text).join("");
+  if (v.result) return String(v.result);
+
+  return String(v);
 }
 
 /* =========================
-   DETECTOR INTELIGENTE
+   NORMALIZADOR FUERTE
 ========================= */
-function esColumnaCodigo(valor) {
-  if (!valor) return false;
-
-  const texto = String(valor)
+function normalizar(valor) {
+  return String(valor)
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s/g, "")
+    .replace(/[^a-z0-9]/gi, "")
     .trim();
-
-  const claves = [
-    "codigo",
-    "cod",
-    "codigo de barras",
-    "codigos",
-    "barcode",
-    "bar code",
-    "serial",
-    "serial number",
-    "id",
-    "identificador",
-    "identificacion",
-    "identificacao",
-    "sku",
-    "ean",
-    "upc",
-  ];
-
-  return claves.some(k => texto.includes(k));
 }
 
 /* =========================
    HANDLER
 ========================= */
 export default async function handler(req, res) {
+
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Método no permitido" });
   }
@@ -61,6 +46,7 @@ export default async function handler(req, res) {
   const form = formidable({ multiples: true });
 
   form.parse(req, async (err, fields, files) => {
+
     if (err) return res.status(500).json({ error: err.message });
 
     const inventarioFile = files.inventario?.[0];
@@ -71,6 +57,7 @@ export default async function handler(req, res) {
     }
 
     try {
+
       const wbInventario = new ExcelJS.Workbook();
       const wbEscaneo = new ExcelJS.Workbook();
 
@@ -81,85 +68,72 @@ export default async function handler(req, res) {
       const wsEscaneo = wbEscaneo.worksheets[0];
 
       /* =========================
-         EXTRAER CÓDIGOS ESCANEADOS
+         EXTRAER CODIGOS ESCANEADOS
       ========================= */
-      const codigosEscaneo = new Set();
-      let totalEscaneados = 0;
+      const codigosEscaneados = new Set();
+      const codigosOriginales = new Set();
 
-      wsEscaneo.eachRow((row, rowNumber) => {
-        if (rowNumber === 1) return;
+      wsEscaneo.eachRow((row) => {
+        row.eachCell((cell) => {
+          const valor = obtenerValor(cell);
+          const limpio = normalizar(valor);
 
-        const valor = row.getCell(1).value;
-        const codigo = normalizarCodigo(valor);
-
-        if (codigo) {
-          codigosEscaneo.add(codigo);
-          totalEscaneados++;
-        }
+          if (limpio.length >= 4) { // evitar celdas basura
+            codigosEscaneados.add(limpio);
+            codigosOriginales.add(limpio);
+          }
+        });
       });
 
-      if (codigosEscaneo.size === 0) {
-        return res.status(400).json({ error: "No se encontraron códigos válidos en el archivo de escaneo" });
+      if (codigosEscaneados.size === 0) {
+        return res.status(400).json({ error: "No se detectaron códigos válidos en el archivo de escaneo" });
       }
 
       /* =========================
-         DETECTAR COLUMNA CÓDIGO
-      ========================= */
-      let colCodigo = null;
-
-      wsInventario.getRow(1).eachCell((cell, col) => {
-        if (esColumnaCodigo(cell.value)) {
-          colCodigo = col;
-        }
-      });
-
-      if (!colCodigo) {
-        return res.status(400).json({ error: "No se encontró columna tipo código en inventario" });
-      }
-
-      /* =========================
-         CRUCE
+         BUSCAR EN TODO EL INVENTARIO
       ========================= */
       let coincidencias = 0;
-      const noEncontrados = [];
 
-      wsInventario.eachRow((row, rowNumber) => {
-        if (rowNumber === 1) return;
+      wsInventario.eachRow((row) => {
+        row.eachCell((cell) => {
 
-        const cell = row.getCell(colCodigo);
-        const codigoInventario = normalizarCodigo(cell.value);
+          const valor = obtenerValor(cell);
+          const limpio = normalizar(valor);
 
-        if (!codigoInventario) return;
+          if (codigosEscaneados.has(limpio)) {
 
-        if (codigosEscaneo.has(codigoInventario)) {
-          // SOLO pinta la celda del código
-          cell.fill = {
-            type: "pattern",
-            pattern: "solid",
-            fgColor: { argb: "FF00FF00" },
-          };
+            cell.fill = {
+              type: "pattern",
+              pattern: "solid",
+              fgColor: { argb: "FF00FF00" }
+            };
 
-          coincidencias++;
-        } else {
-          noEncontrados.push(codigoInventario);
-        }
+            coincidencias++;
+            codigosEscaneados.delete(limpio); // evitar doble conteo
+          }
+
+        });
       });
 
       /* =========================
          AGREGAR NO ENCONTRADOS
       ========================= */
-      if (noEncontrados.length > 0) {
+      if (codigosEscaneados.size > 0) {
+
         const filaInicio = wsInventario.rowCount + 2;
 
-        wsInventario.getCell(`A${filaInicio}`).value = "CÓDIGOS NO ENCONTRADOS EN ESCANEO";
+        wsInventario.getCell(`A${filaInicio}`).value =
+          "CODIGOS ESCANEADOS NO ENCONTRADOS EN INVENTARIO";
 
-        noEncontrados.forEach((codigo, index) => {
-          wsInventario.getCell(`A${filaInicio + index + 1}`).value = codigo;
+        let index = 1;
+        codigosEscaneados.forEach(codigo => {
+          wsInventario.getCell(`A${filaInicio + index}`).value = codigo;
+          index++;
         });
       }
 
       /* =========================
-         GENERAR RESULTADO
+         GENERAR ARCHIVO
       ========================= */
       const buffer = await wbInventario.xlsx.writeBuffer();
 
@@ -167,6 +141,7 @@ export default async function handler(req, res) {
         "Content-Type",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
       );
+
       res.setHeader(
         "Content-Disposition",
         "attachment; filename=inventario_cruzado.xlsx"
@@ -175,14 +150,18 @@ export default async function handler(req, res) {
       res.send(buffer);
 
       console.log(
-        `De ${totalEscaneados} códigos escaneados se hallaron ${coincidencias} coincidencias`
+        `De ${codigosOriginales.size} códigos escaneados, ${coincidencias} coincidieron`
       );
 
     } catch (error) {
+
       return res.status(500).json({
         error: "Error procesando archivos",
-        detalle: error.message,
+        detalle: error.message
       });
+
     }
+
   });
+
 }
