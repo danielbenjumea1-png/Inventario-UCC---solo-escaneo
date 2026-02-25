@@ -285,7 +285,7 @@ async function cruzarInventarioExcel() {
     formData.append("inventario", inv);
     formData.append("escaneo", esc);
 
-try {
+    try {
     const formData = new FormData();
     formData.append("inventario", inv);
     formData.append("escaneo", esc);
