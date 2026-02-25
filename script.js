@@ -281,29 +281,27 @@ async function cruzarInventarioExcel() {
 
     const intervalo = simularProgreso();
 
+    // Solo UNA vez: crear FormData
     const formData = new FormData();
     formData.append("inventario", inv);
     formData.append("escaneo", esc);
 
     try {
         const response = await fetch("/api/cruzar_inventario", {
-        method: "POST",
-        body: formData
-    });
+            method: "POST",
+            body: formData
+        });
 
-    // Ahora mostramos el error real que envía el servidor
         if (!response.ok) {
             let errorText = "Error en el servidor al cruzar inventarios";
             try {
                 const errorData = await response.json();
                 errorText = errorData.error || errorText;
-            } catch(e) {
-            
-            }
+            } catch(e) { /* ignorar */ }
             throw new Error(errorText);
         }
 
-    // Descargar archivo
+        // Descargar archivo
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -313,7 +311,7 @@ async function cruzarInventarioExcel() {
         a.click();
         a.remove();
 
-        // Mostrar coincidencias exactas desde header
+        // Mostrar coincidencias exactas
         const coincidencias = response.headers.get("X-Coincidencias") || 0;
         setResult(`✅ Cruce completado. Coincidencias exactas: ${coincidencias}`, 'green');
 
@@ -325,7 +323,7 @@ async function cruzarInventarioExcel() {
         clearInterval(intervalo);
         alert("Error durante el cruce de inventarios: " + err.message);
     }
-
+}
 // Listeners seguros (clic + móvil)
 safeAddListener("toggleCruceBtn", "click", toggleCruceInventario);
 safeAddListener("toggleCruceBtn", "touchstart", toggleCruceInventario);
