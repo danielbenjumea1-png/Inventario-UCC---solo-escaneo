@@ -279,9 +279,8 @@ async function cruzarInventarioExcel() {
     barra.style.width = "0%";
     texto.textContent = "0%";
 
-    const intervalo = simularProgreso();
+    const intervalo = simularProgreso(); // simulación UX
 
-    // Solo UNA vez: crear FormData
     const formData = new FormData();
     formData.append("inventario", inv);
     formData.append("escaneo", esc);
@@ -297,11 +296,11 @@ async function cruzarInventarioExcel() {
             try {
                 const errorData = await response.json();
                 errorText = errorData.error || errorText;
-            } catch(e) { /* ignorar */ }
+            } catch(e) {}
             throw new Error(errorText);
         }
 
-        // Descargar archivo
+        // Descargar archivo Excel
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
