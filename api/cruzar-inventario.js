@@ -6,16 +6,10 @@ export const config = {
   api: { bodyParser: false },
 };
 
-// Detecta códigos reales (letras + números)
 function esCodigoValido(valor) {
   if (!valor) return false;
-
   const texto = String(valor).trim();
-
-  // Solo letras y números, entre 6 y 20 caracteres
-  const regex = /^[A-Za-z0-9]{6,20}$/;
-
-  return regex.test(texto);
+  return /^[A-Za-z0-9]{6,20}$/.test(texto);
 }
 
 export default async function handler(req, res) {
@@ -51,47 +45,77 @@ export default async function handler(req, res) {
       const wsInventario = wbInventario.worksheets[0];
       const wsEscaneo = wbEscaneo.worksheets[0];
 
-      // =====================
-      // EXTRAER CODIGOS ESCANEADOS
-      // =====================
+      // =========================
+      // 1️⃣ EXTRAER CODIGOS ESCANEADOS EXACTOS
+      // =========================
       const codigosEscaneados = new Set();
 
       wsEscaneo.eachRow(row => {
         row.eachCell(cell => {
-          const valor = String(cell.value || "").trim();
+          const valor = String(cell.value ?? "").trim();
           if (esCodigoValido(valor)) {
             codigosEscaneados.add(valor);
           }
         });
       });
 
-      // =====================
-      // CRUCE EXACTO
-      // =====================
+      // =========================
+      // 2️⃣ DETECTAR COLUMNA REAL DE CODIGOS EN INVENTARIO
+      // =========================
+      let mejorColumna = null;
+      let maxCodigos = 0;
+
+      const totalColumnas = wsInventario.columnCount;
+
+      for (let col = 1; col <= totalColumnas; col++) {
+        let contador = 0;
+
+        wsInventario.eachRow((row, rowNumber) => {
+          if (rowNumber === 1) return;
+          const valor = String(row.getCell(col).value ?? "").trim();
+          if (esCodigoValido(valor)) contador++;
+        });
+
+        if (contador > maxCodigos) {
+          maxCodigos = contador;
+          mejorColumna = col;
+        }
+      }
+
+      if (!mejorColumna) {
+        return res.status(400).json({
+          error: "No se detectó columna de códigos en inventario"
+        });
+      }
+
+      // =========================
+      // 3️⃣ CRUCE ESTRICTO ===
+      // =========================
       let coincidencias = 0;
       const encontrados = new Set();
 
-      wsInventario.eachRow(row => {
-        row.eachCell(cell => {
-          const valor = String(cell.value || "").trim();
+      wsInventario.eachRow((row, rowNumber) => {
+        if (rowNumber === 1) return;
 
-          if (codigosEscaneados.has(valor)) {
+        const cell = row.getCell(mejorColumna);
+        const valor = String(cell.value ?? "").trim();
 
-            cell.fill = {
-              type: "pattern",
-              pattern: "solid",
-              fgColor: { argb: "FF00FF00" }
-            };
+        if (codigosEscaneados.has(valor)) {
 
-            coincidencias++;
-            encontrados.add(valor);
-          }
-        });
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "FF00FF00" }
+          };
+
+          coincidencias++;
+          encontrados.add(valor);
+        }
       });
 
-      // =====================
-      // NO ENCONTRADOS
-      // =====================
+      // =========================
+      // 4️⃣ NO ENCONTRADOS
+      // =========================
       const noEncontrados = [...codigosEscaneados]
         .filter(c => !encontrados.has(c));
 
@@ -107,6 +131,9 @@ export default async function handler(req, res) {
         });
       }
 
+      // =========================
+      // 5️⃣ RESUMEN
+      // =========================
       const resumenFila = wsInventario.rowCount + 2;
 
       wsInventario.getCell(`C${resumenFila}`).value =
