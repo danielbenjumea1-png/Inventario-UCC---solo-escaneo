@@ -6,23 +6,30 @@ export const config = {
 };
 
 /* =========================
-   OBTENER VALOR REAL CELDA
+   EXTRAER VALOR REAL CELDA
 ========================= */
-function obtenerValor(cell) {
+function obtenerValorCelda(cell) {
   if (!cell || cell.value == null) return "";
 
   const v = cell.value;
 
-  if (typeof v === "string" || typeof v === "number") return String(v);
+  if (typeof v === "string" || typeof v === "number") {
+    return String(v);
+  }
+
   if (v.text) return String(v.text);
-  if (v.richText) return v.richText.map(r => r.text).join("");
+
+  if (v.richText) {
+    return v.richText.map(r => r.text).join("");
+  }
+
   if (v.result) return String(v.result);
 
   return String(v);
 }
 
 /* =========================
-   NORMALIZADOR FUERTE
+   NORMALIZADOR
 ========================= */
 function normalizar(valor) {
   return String(valor)
@@ -68,37 +75,42 @@ export default async function handler(req, res) {
       const wsEscaneo = wbEscaneo.worksheets[0];
 
       /* =========================
-         EXTRAER CODIGOS ESCANEADOS
+         EXTRAER CÓDIGOS ESCANEADOS
       ========================= */
       const codigosEscaneados = new Set();
-      const codigosOriginales = new Set();
+      const codigosOriginales = new Map();
+      let totalEscaneados = 0;
 
       wsEscaneo.eachRow((row) => {
         row.eachCell((cell) => {
-          const valor = obtenerValor(cell);
+          const valor = obtenerValorCelda(cell);
           const limpio = normalizar(valor);
 
-          if (limpio.length >= 4) { // evitar celdas basura
+          if (limpio) {
             codigosEscaneados.add(limpio);
-            codigosOriginales.add(limpio);
+            codigosOriginales.set(limpio, valor);
+            totalEscaneados++;
           }
         });
       });
 
       if (codigosEscaneados.size === 0) {
-        return res.status(400).json({ error: "No se detectaron códigos válidos en el archivo de escaneo" });
+        return res.status(400).json({ error: "El archivo de escaneo no tiene códigos válidos" });
       }
 
       /* =========================
-         BUSCAR EN TODO EL INVENTARIO
+         CRUCE TOTAL SIN COLUMNAS
       ========================= */
       let coincidencias = 0;
+      const encontrados = new Set();
 
       wsInventario.eachRow((row) => {
         row.eachCell((cell) => {
 
-          const valor = obtenerValor(cell);
+          const valor = obtenerValorCelda(cell);
           const limpio = normalizar(valor);
+
+          if (!limpio) return;
 
           if (codigosEscaneados.has(limpio)) {
 
@@ -109,31 +121,31 @@ export default async function handler(req, res) {
             };
 
             coincidencias++;
-            codigosEscaneados.delete(limpio); // evitar doble conteo
+            encontrados.add(limpio);
           }
-
         });
       });
 
       /* =========================
-         AGREGAR NO ENCONTRADOS
+         CÓDIGOS NO ENCONTRADOS
       ========================= */
-      if (codigosEscaneados.size > 0) {
+      const noEncontrados = [...codigosEscaneados].filter(c => !encontrados.has(c));
 
-        const filaInicio = wsInventario.rowCount + 2;
+      if (noEncontrados.length > 0) {
 
-        wsInventario.getCell(`A${filaInicio}`).value =
-          "CODIGOS ESCANEADOS NO ENCONTRADOS EN INVENTARIO";
+        const inicio = wsInventario.rowCount + 2;
 
-        let index = 1;
-        codigosEscaneados.forEach(codigo => {
-          wsInventario.getCell(`A${filaInicio + index}`).value = codigo;
-          index++;
+        wsInventario.getCell(`A${inicio}`).value =
+          "CODIGOS ESCANEADOS QUE NO EXISTEN EN INVENTARIO";
+
+        noEncontrados.forEach((codigo, index) => {
+          wsInventario.getCell(`A${inicio + index + 1}`).value =
+            codigosOriginales.get(codigo);
         });
       }
 
       /* =========================
-         GENERAR ARCHIVO
+         GENERAR RESULTADO
       ========================= */
       const buffer = await wbInventario.xlsx.writeBuffer();
 
@@ -150,7 +162,7 @@ export default async function handler(req, res) {
       res.send(buffer);
 
       console.log(
-        `De ${codigosOriginales.size} códigos escaneados, ${coincidencias} coincidieron`
+        `De ${totalEscaneados} códigos escaneados se hallaron ${coincidencias} coincidencias`
       );
 
     } catch (error) {
