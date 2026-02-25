@@ -1,6 +1,5 @@
-
 import io
-from flask import Flask, request, send_file, jsonify
+from flask import Flask, request, send_file, jsonify, Response
 import pandas as pd
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
@@ -24,22 +23,20 @@ def cruzar_inventario():
         df_inventario['codigo'] = df_inventario['codigo'].astype(str).str.strip()
         df_escaneo['codigo'] = df_escaneo['codigo'].astype(str).str.strip()
 
-        # Crear set de códigos escaneados
         codigos_escaneo = set(df_escaneo['codigo'])
 
-        # Guardar inventario temporalmente en memoria
+        # Guardar inventario en memoria
         output_buffer = io.BytesIO()
         df_inventario.to_excel(output_buffer, index=False)
         output_buffer.seek(0)
 
-        # Abrir con openpyxl para marcar en verde
+        # Abrir con openpyxl
         wb = load_workbook(output_buffer)
         ws = wb.active
 
-        # Color verde
         verde = PatternFill(start_color="00FF00", end_color="00FF00", fill_type="solid")
 
-        # Buscar columna 'codigo'
+        # Buscar columna "codigo"
         col_codigo = None
         for col in range(1, ws.max_column + 1):
             if ws.cell(row=1, column=col).value == "codigo":
@@ -61,14 +58,16 @@ def cruzar_inventario():
         wb.save(final_buffer)
         final_buffer.seek(0)
 
-        # Devolver Excel como attachment + header con coincidencias
-        return send_file(
-            final_buffer,
-            as_attachment=True,
-            download_name="inventario_cruzado.xlsx",
-            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"X-Coincidencias": str(coincidencias)}
-        )
+        # Crear Response manualmente para poder agregar headers
+        response = Response(final_buffer.getvalue(),
+                            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        response.headers["Content-Disposition"] = "attachment; filename=inventario_cruzado.xlsx"
+        response.headers["X-Coincidencias"] = str(coincidencias)
+
+        return response
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+if __name__ == "__main__":
+    app.run(debug=True)
