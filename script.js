@@ -4,6 +4,8 @@ let inventario = JSON.parse(localStorage.getItem('inventario')) || [];
 let codigoAFila = {};
 let excelInicialCargado = false;
 let quaggaIniciado = false;
+let bufferCodigo = null;
+let contador = 0;
 
 // ---------- CARGA EXCEL INICIAL ---------- ESTO ES OPCIONAL; PARA INVENTARIOS CORTOS CON EXCEL YA AGREGADO PARA RECONOCIMIENTO DE CODIGOS; CRUCE AUTOMATICO
 async function cargarExcelInicial() {
@@ -104,9 +106,22 @@ function iniciarQuagga() {
     Quagga.onDetected(function(result) {
         try {
             let code = result.codeResult.code || '';
-            code = code.toString();
-            
-            procesarCodigo(code);
+            code = code.toString().trim();
+            // ignorar códigos absurdamente cortos o largos
+            if (code.length < 6 || code.length > 20) return;
+
+            if (code === bufferCodigo) {
+            contador++;
+            } else {
+                bufferCodigo = code;
+                contador = 1;
+            }
+
+            // aceptar solo si se detecta varias veces seguidas
+            if (contador >= 2) {
+                procesarCodigo(code);
+                contador = 0;
+            }    
         } catch (e) {
             console.warn('Error procesando resultado Quagga:', e);
         }
