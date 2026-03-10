@@ -106,10 +106,8 @@ function iniciarQuagga() {
             let code = result.codeResult.code || '';
             code = code.toString().toUpperCase().replace(/[^A-Z0-9]/g, '');
 
-            // Códigos internos de biblioteca: Code128 / Code39 (alfanuméricos, mínimo 5 caracteres)
-            const esInterno = /^[A-Z0-9]{5,}$/.test(code);
-
-            if (!esInterno) return;
+            // Filtro según la regla: inicia con 'B' y >=7 caracteres 
+            if (!code.startsWith('B') || code.length < 7) return;
             
             procesarCodigo(code);
         } catch (e) {
