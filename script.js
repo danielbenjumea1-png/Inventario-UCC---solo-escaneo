@@ -106,22 +106,29 @@ function iniciarQuagga() {
     Quagga.onDetected(function(result) {
         try {
             let code = result.codeResult.code || '';
+            let formato = result.codeResult.format || '';
+
             code = code.toString().trim();
-            // ignorar códigos absurdamente cortos o largos
-            if (code.length < 6 || code.length > 20) return;
+
+            // ignorar lecturas demasiado cortas
+            if (code.length < 6) return;
+
+            const formatosPermitidos = ["code_128", "ean", "ean_13"];
+
+            if (!formatosPermitidos.includes(formato)) return;
 
             if (code === bufferCodigo) {
             contador++;
             } else {
-                bufferCodigo = code;
-                contador = 1;
+            bufferCodigo = code;
+            contador = 1;
             }
 
-            // aceptar solo si se detecta varias veces seguidas
             if (contador >= 2) {
-                procesarCodigo(code);
-                contador = 0;
-            }    
+            procesarCodigo(code);
+            contador = 0;
+            }
+
         } catch (e) {
             console.warn('Error procesando resultado Quagga:', e);
         }
