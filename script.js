@@ -86,7 +86,7 @@ function iniciarQuagga() {
         },
         locator: { patchSize: "medium", halfSample: true },
         numOfWorkers: 2,
-        decoder: { readers: ["code_128_reader", "ean_reader"] },
+        decoder: { readers: ["code_128_reader"] },
         locate: true
     }, function(err) {
         if (err) {
