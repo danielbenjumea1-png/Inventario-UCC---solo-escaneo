@@ -105,14 +105,11 @@ function iniciarQuagga() {
         try {
             let code = result.codeResult.code || '';
             code = code.toString().toUpperCase().replace(/[^A-Z0-9]/g, '');
-            
-            // ISBN EAN-13: 13 dígitos, empieza con 978 o 979
-            const esISBN = /^\d{13}$/.test(code) && (code.startsWith('978') || code.startsWith('979'));
 
             // Códigos internos de biblioteca: Code128 / Code39 (alfanuméricos, mínimo 5 caracteres)
             const esInterno = /^[A-Z0-9]{5,}$/.test(code);
 
-            if (!esISBN && !esInterno) return;
+            if (!esInterno) return;
             
             procesarCodigo(code);
         } catch (e) {
