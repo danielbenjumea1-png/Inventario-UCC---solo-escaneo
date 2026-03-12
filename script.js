@@ -81,16 +81,16 @@ function iniciarQuagga() {
             type: "LiveStream",
             target: document.querySelector('#interactive'),
             constraints: {
-                width: { ideal: 640 },
-                height: { ideal: 480 },
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
                 facingMode: "environment"   
             }
         },
-        locator: { patchSize: "large", halfSample: false },
+        locator: { patchSize: "large", halfSample: true },
         numOfWorkers: Math.min(navigator.hardwareConcurrency || 4, 4),
         decoder: { readers: ["code_128_reader", "ean_reader"], multiple: false },
         locate: true,
-        frequency: 10
+        frequency: 5
     }, function(err) {
         if (err) {
             console.error('Quagga init error:', err);
