@@ -205,14 +205,6 @@ function iniciarQuagga() {
         }
     });
 }
-
-// Función auxiliar para procesar el código (modifica según tus necesidades)
-function procesarCodigo(code, formato) {
-    console.log(`Código procesado: ${code} (${formato})`);
-    // Aquí va tu lógica de procesamiento
-    setResult(`Código escaneado: ${code} - Formato: ${formato}`, 'blue');
-}
-
 // ---------- PROCESO DE CÓDIGO (marcar TODO como "encontrado") ----------
 function procesarCodigo(codigo) {
     codigo = (codigo || '').toString().trim().toUpperCase();
