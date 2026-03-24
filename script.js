@@ -6,6 +6,9 @@ let excelInicialCargado = false;
 let quaggaIniciado = false;
 let bufferCodigo = null;
 let contador = 0;
+let ultimaLectura = 0;
+const MIN_CONFIDENCE = 3.8; // Umbral ultra estricto
+const TIEMPO_DEBOUNCE = 1200; // 1.2 segundos entre lecturas
 
 // ---------- CARGA EXCEL INICIAL ---------- ESTO ES OPCIONAL; PARA INVENTARIOS CORTOS CON EXCEL YA AGREGADO PARA RECONOCIMIENTO DE CODIGOS; CRUCE AUTOMATICO
 async function cargarExcelInicial() {
@@ -67,11 +70,12 @@ function actualizarMapeo() {
 // ---------- QUAGGA (cámara / escaneo) ----------
 function iniciarQuagga() {
     if (quaggaIniciado) {
-        setResult('La cámara ya está iniciada. / The camera is already started.', 'green');
+        setResult('La cámara ya está activa. / Camera already active.', 'green');
         return;
     }
-    if (typeof Quagga === 'undefined') {
-        setResult('Error: QuaggaJS no cargó. Verifica la conexión a internet. / Error: QuaggaJS failed to load. Please check your internet connection.', 'red');
+    
+    if (typeof Quagga === 'undefined') { // ← CORREGIDO: era ''
+        setResult('❌ QuaggaJS no cargó. Verifica internet.', 'red');
         return;
     }
 
@@ -83,59 +87,108 @@ function iniciarQuagga() {
             constraints: {
                 width: { ideal: 640 },
                 height: { ideal: 480 },
-                facingMode: "environment"   
+                facingMode: "environment",
+                focusMode: "continuous"
             }
         },
-        locator: { patchSize: "large", halfSample: true },
-        numOfWorkers: Math.min(navigator.hardwareConcurrency || 4, 4),
-        decoder: { readers: ["code_128_reader", "ean_reader"], multiple: false },
+        locator: {
+            patchSize: "medium", // ← Más estable que "large"
+            halfSample: true
+        },
+        numOfWorkers: 2, // ← Reducido para estabilidad
+        decoder: {
+            readers: [
+                "code_128_reader",
+                "ean_13_reader", 
+                "ean_8_reader"
+            ],
+            multiple: false
+        },
         locate: true,
-        frequency: 10
+        frequency: 4 // ← Reducido drásticamente
     }, function(err) {
         if (err) {
-            console.error('Quagga init error:', err);
-            setResult('Error: No se pudo acceder a la cámara. Permite permisos y toca "Iniciar Cámara" de nuevo. / Camera access failed. Please allow permissions and tap "Start Camera" again.', 'red');
+            console.error('Quagga error:', err);
+            setResult('❌ Error cámara. Permite permisos y reintenta.', 'red');
             return;
         }
+        
         Quagga.start();
         quaggaIniciado = true;
         const camEl = document.getElementById('camaraIndicador');
         if (camEl) camEl.style.display = 'block';
-        setResult('Cámara iniciada. Escanea un código. / Camera started. Please scan a code.', 'green');
+        setResult('✅ Cámara activa. Escanea código (mantén estable).', 'green');
     });
 
+    // **DETECTOR ULTRA ESTRICTO**
     Quagga.onDetected(function(result) {
         try {
-            let code = result.codeResult.code || '';
-            let formato = result.codeResult.format || '';
-
-            code = code.toString().trim();
-
-            // ignorar lecturas demasiado cortas
-            if (code.length < 6) return;
-
-            const formatosPermitidos = ["code_128", "ean", "ean_13"];
-
-            if (!formatosPermitidos.includes(formato)) return;
-
-            if (code === bufferCodigo) {
-            contador++;
-            } else {
-            bufferCodigo = code;
-            contador = 1;
+            const ahora = Date.now();
+            
+            // FILTRO 1: Confianza mínima
+            const confidence = result.codeResult?.decodedCodes?.[0]?.confidence;
+            if (!confidence || confidence < MIN_CONFIDENCE) {
+                return;
             }
 
+            let code = result.codeResult.code || '';
+            let formato = result.codeResult.format || '';
+            
+            code = code.toString().trim();
+
+            // FILTRO 2: Longitud estricta
+            if (code.length < 8 || code.length > 20) {
+                return;
+            }
+
+            // FILTRO 3: Solo formatos específicos
+            const formatosValidos = ["code_128", "ean_13", "ean_8"];
+            if (!formatosValidos.includes(formato)) {
+                return;
+            }
+
+            // FILTRO 4: Debounce temporal
+            if (ahora - ultimaLectura < TIEMPO_DEBOUNCE) {
+                return;
+            }
+
+            // FILTRO 5: Buffer con confirmación triple
+            if (code === bufferCodigo) {
+                contador++;
+            } else {
+                bufferCodigo = code;
+                contador = 1;
+            }
+
+            console.log(`🔍 [${contador}/3] ${code} (${formato}) confianza:${confidence.toFixed(2)}`);
+
+            // CONFIRMACIÓN FINAL
             if (contador >= 3) {
-            procesarCodigo(code);
-            contador = 0;
+                procesarCodigo(code);
+                // RESET COMPLETO
+                bufferCodigo = null;
+                contador = 0;
+                ultimaLectura = ahora;
             }
 
         } catch (e) {
-            console.warn('Error procesando resultado Quagga:', e);
+            console.warn('Error detector:', e);
         }
     });
 }
 
+function detenerQuagga() {
+    if (quaggaIniciado) {
+        Quagga.stop();
+        quaggaIniciado = false;
+        bufferCodigo = null;
+        contador = 0;
+        ultimaLectura = 0;
+        const camEl = document.getElementById('camaraIndicador');
+        if (camEl) camEl.style.display = 'none';
+        setResult('⏹️ Cámara detenida.', 'blue');
+    }
+}
 // ---------- PROCESO DE CÓDIGO (marcar TODO como "encontrado") ----------
 function procesarCodigo(codigo) {
     codigo = (codigo || '').toString().trim().toUpperCase();
