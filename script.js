@@ -65,6 +65,14 @@ function actualizarMapeo() {
 }
 
 // ---------- QUAGGA (cámara / escaneo) ----------
+
+// Variables globales para el sistema de buffer mejorado
+let ultimoCodigoTiempo = 0;
+let bufferCodigos = new Map();
+const tiempoMinimo = 1500; // Reducido de 2000 a 1500ms
+const contadorMinimo = 3; // Reducido de 5 a 3 para más sensibilidad
+const calificarMinimo = 0.6; // Reducido de 0.75 a 0.6 para menos restrictividad
+
 function iniciarQuagga() {
     if (quaggaIniciado) {
         setResult('La cámara ya está iniciada. / The camera is already started.', 'green');
@@ -76,38 +84,32 @@ function iniciarQuagga() {
         return;
     }
 
-    // Variables para control de lectura mejorado
-    let ultimoCodigoTiempo = 0;
-    let bufferCodigos = new Map(); // Para trackear códigos con timestamps
-    let tiempoMinimo = 2000; // 2 segundos mínimo entre lecturas del mismo código
-    let contadorMinimo = 5; // Necesita 5 lecturas consistentes
-    let calificarMinimo = 0.75; // Calidad mínima de lectura
-
     Quagga.init({
         inputStream: {
             name: "Live",
             type: "LiveStream",
             target: document.querySelector('#interactive'),
             constraints: {
-                width: { ideal: 800 }, // Aumentamos resolución
-                height: { ideal: 600 },
+                width: { ideal: 640 }, // Volvemos a resolución original para mejor rendimiento
+                height: { ideal: 480 },
                 facingMode: "environment"
             }
         },
         locator: {
-            patchSize: "medium", // Cambio de large a medium para mejor precisión
-            halfSample: false // Desactivamos para mejor calidad
+            patchSize: "medium",
+            halfSample: false
         },
-        numOfWorkers: Math.min(navigator.hardwareConcurrency || 2, 2), // Reducimos workers
+        numOfWorkers: Math.min(navigator.hardwareConcurrency || 2, 2),
         decoder: {
             readers: [
                 "code_128_reader",
-                "ean_13_reader" // Usamos específicamente ean_13_reader en lugar de ean_reader
+                "ean_13_reader",
+                "ean_reader" // Agregamos de vuelta para mayor compatibilidad
             ],
             multiple: false
         },
         locate: true,
-        frequency: 5 // Reducimos frecuencia para mejor estabilidad
+        frequency: 8 // Aumentamos un poco la frecuencia
     }, function(err) {
         if (err) {
             console.error('Quagga init error:', err);
@@ -126,13 +128,15 @@ function iniciarQuagga() {
 
     Quagga.onDetected(function(result) {
         try {
-            // Verificar calidad de la lectura
-            const quality = result.codeResult.decodedCodes.reduce((sum, code) => {
-                return sum + (code.error || 0);
-            }, 0) / result.codeResult.decodedCodes.length;
+            // Verificar calidad de la lectura (más permisivo)
+            if (result.codeResult.decodedCodes && result.codeResult.decodedCodes.length > 0) {
+                const quality = result.codeResult.decodedCodes.reduce((sum, code) => {
+                    return sum + (code.error || 0);
+                }, 0) / result.codeResult.decodedCodes.length;
 
-            if (quality > (1 - calificarMinimo)) {
-                return; // Calidad demasiado baja
+                if (quality > (1 - calificarMinimo)) {
+                    return; // Calidad demasiado baja
+                }
             }
 
             let code = result.codeResult.code || '';
@@ -140,14 +144,15 @@ function iniciarQuagga() {
             
             code = code.toString().trim();
 
-            // Validaciones mejoradas
-            if (code.length < 6) return;
-            
-            // Validación específica por formato
-            if (formato === 'code_128' && (code.length < 6 || code.length > 48)) return;
-            if (formato === 'ean_13' && code.length !== 13) return;
+            // Validaciones básicas
+            if (code.length < 4) return; // Reducido de 6 a 4
 
-            const formatosPermitidos = ["code_128", "ean_13"];
+            // Validación específica por formato (más permisiva)
+            if (formato === 'code_128' && (code.length < 4 || code.length > 48)) return;
+            if (formato === 'ean_13' && code.length !== 13) return;
+            if (formato === 'ean' && (code.length < 8 || code.length > 13)) return;
+
+            const formatosPermitidos = ["code_128", "ean_13", "ean"];
             if (!formatosPermitidos.includes(formato)) return;
 
             const tiempoActual = Date.now();
@@ -170,7 +175,8 @@ function iniciarQuagga() {
                 if (buffer.contador >= contadorMinimo && 
                     (tiempoActual - ultimoCodigoTiempo) > tiempoMinimo) {
                     
-                    procesarCodigo(code, formato);
+                    // LLAMAR A TU FUNCIÓN ORIGINAL CON SOLO UN PARÁMETRO
+                    procesarCodigo(code);
                     ultimoCodigoTiempo = tiempoActual;
                     
                     // Limpiar buffer después de procesar
@@ -194,7 +200,7 @@ function iniciarQuagga() {
     Quagga.onProcessed(function(result) {
         if (!result || !result.codeResult) {
             // Limpiar buffer gradualmente cuando no hay detección
-            if (bufferCodigos.size > 0 && Math.random() < 0.1) {
+            if (bufferCodigos.size > 0 && Math.random() < 0.15) {
                 const ahora = Date.now();
                 for (let [clave, buffer] of bufferCodigos.entries()) {
                     if (ahora - buffer.ultimoTiempo > 3000) {
@@ -205,6 +211,7 @@ function iniciarQuagga() {
         }
     });
 }
+
 // ---------- PROCESO DE CÓDIGO (marcar TODO como "encontrado") ----------
 function procesarCodigo(codigo) {
     codigo = (codigo || '').toString().trim().toUpperCase();
