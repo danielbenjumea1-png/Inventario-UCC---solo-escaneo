@@ -70,10 +70,18 @@ function iniciarQuagga() {
         setResult('La cámara ya está iniciada. / The camera is already started.', 'green');
         return;
     }
+
     if (typeof Quagga === 'undefined') {
         setResult('Error: QuaggaJS no cargó. Verifica la conexión a internet. / Error: QuaggaJS failed to load. Please check your internet connection.', 'red');
         return;
     }
+
+    // Variables para control de lectura mejorado
+    let ultimoCodigoTiempo = 0;
+    let bufferCodigos = new Map(); // Para trackear códigos con timestamps
+    let tiempoMinimo = 2000; // 2 segundos mínimo entre lecturas del mismo código
+    let contadorMinimo = 5; // Necesita 5 lecturas consistentes
+    let calificarMinimo = 0.75; // Calidad mínima de lectura
 
     Quagga.init({
         inputStream: {
@@ -81,59 +89,128 @@ function iniciarQuagga() {
             type: "LiveStream",
             target: document.querySelector('#interactive'),
             constraints: {
-                width: { ideal: 640 },
-                height: { ideal: 480 },
-                facingMode: "environment"   
+                width: { ideal: 800 }, // Aumentamos resolución
+                height: { ideal: 600 },
+                facingMode: "environment"
             }
         },
-        locator: { patchSize: "large", halfSample: true },
-        numOfWorkers: Math.min(navigator.hardwareConcurrency || 4, 4),
-        decoder: { readers: ["code_128_reader", "ean_reader"], multiple: false },
+        locator: {
+            patchSize: "medium", // Cambio de large a medium para mejor precisión
+            halfSample: false // Desactivamos para mejor calidad
+        },
+        numOfWorkers: Math.min(navigator.hardwareConcurrency || 2, 2), // Reducimos workers
+        decoder: {
+            readers: [
+                "code_128_reader",
+                "ean_13_reader" // Usamos específicamente ean_13_reader en lugar de ean_reader
+            ],
+            multiple: false
+        },
         locate: true,
-        frequency: 10
+        frequency: 5 // Reducimos frecuencia para mejor estabilidad
     }, function(err) {
         if (err) {
             console.error('Quagga init error:', err);
             setResult('Error: No se pudo acceder a la cámara. Permite permisos y toca "Iniciar Cámara" de nuevo. / Camera access failed. Please allow permissions and tap "Start Camera" again.', 'red');
             return;
         }
+
         Quagga.start();
         quaggaIniciado = true;
+        
         const camEl = document.getElementById('camaraIndicador');
         if (camEl) camEl.style.display = 'block';
+        
         setResult('Cámara iniciada. Escanea un código. / Camera started. Please scan a code.', 'green');
     });
 
     Quagga.onDetected(function(result) {
         try {
-            let code = result.codeResult.code || '';
-            let formato = result.codeResult.format || '';
+            // Verificar calidad de la lectura
+            const quality = result.codeResult.decodedCodes.reduce((sum, code) => {
+                return sum + (code.error || 0);
+            }, 0) / result.codeResult.decodedCodes.length;
 
-            code = code.toString().trim();
-
-            // ignorar lecturas demasiado cortas
-            if (code.length < 6) return;
-
-            const formatosPermitidos = ["code_128", "ean", "ean_13"];
-
-            if (!formatosPermitidos.includes(formato)) return;
-
-            if (code === bufferCodigo) {
-            contador++;
-            } else {
-            bufferCodigo = code;
-            contador = 1;
+            if (quality > (1 - calificarMinimo)) {
+                return; // Calidad demasiado baja
             }
 
-            if (contador >= 3) {
-            procesarCodigo(code);
-            contador = 0;
+            let code = result.codeResult.code || '';
+            let formato = result.codeResult.format || '';
+            
+            code = code.toString().trim();
+
+            // Validaciones mejoradas
+            if (code.length < 6) return;
+            
+            // Validación específica por formato
+            if (formato === 'code_128' && (code.length < 6 || code.length > 48)) return;
+            if (formato === 'ean_13' && code.length !== 13) return;
+
+            const formatosPermitidos = ["code_128", "ean_13"];
+            if (!formatosPermitidos.includes(formato)) return;
+
+            const tiempoActual = Date.now();
+            
+            // Sistema de buffer mejorado
+            const claveBuffer = `${code}_${formato}`;
+            
+            if (!bufferCodigos.has(claveBuffer)) {
+                bufferCodigos.set(claveBuffer, {
+                    contador: 1,
+                    primerTiempo: tiempoActual,
+                    ultimoTiempo: tiempoActual
+                });
+            } else {
+                const buffer = bufferCodigos.get(claveBuffer);
+                buffer.contador++;
+                buffer.ultimoTiempo = tiempoActual;
+                
+                // Verificar si ha pasado suficiente tiempo y tenemos suficientes lecturas
+                if (buffer.contador >= contadorMinimo && 
+                    (tiempoActual - ultimoCodigoTiempo) > tiempoMinimo) {
+                    
+                    procesarCodigo(code, formato);
+                    ultimoCodigoTiempo = tiempoActual;
+                    
+                    // Limpiar buffer después de procesar
+                    bufferCodigos.clear();
+                }
+            }
+
+            // Limpiar buffers antiguos (más de 5 segundos)
+            for (let [clave, buffer] of bufferCodigos.entries()) {
+                if (tiempoActual - buffer.ultimoTiempo > 5000) {
+                    bufferCodigos.delete(clave);
+                }
             }
 
         } catch (e) {
-            console.warn('Error procesando resultado Quagga:', e);
+            console.warn('Error procesando resultado:', e);
         }
     });
+
+    // Agregar evento para limpiar buffers cuando se pierda el foco
+    Quagga.onProcessed(function(result) {
+        if (!result || !result.codeResult) {
+            // Limpiar buffer gradualmente cuando no hay detección
+            if (bufferCodigos.size > 0 && Math.random() < 0.1) {
+                const ahora = Date.now();
+                for (let [clave, buffer] of bufferCodigos.entries()) {
+                    if (ahora - buffer.ultimoTiempo > 3000) {
+                        bufferCodigos.delete(clave);
+                    }
+                }
+            }
+        }
+    });
+}
+
+// Función auxiliar para procesar el código (modifica según tus necesidades)
+function procesarCodigo(code, formato) {
+    console.log(`Código procesado: ${code} (${formato})`);
+    // Aquí va tu lógica de procesamiento
+    setResult(`Código escaneado: ${code} - Formato: ${formato}`, 'blue');
 }
 
 // ---------- PROCESO DE CÓDIGO (marcar TODO como "encontrado") ----------
