@@ -66,7 +66,6 @@ function actualizarMapeo() {
 
 // ---------- QUAGGA (cámara / escaneo) ----------
 
-// Variables globales para el sistema de buffer mejorado
 let ultimoCodigoTiempo = 0;
 let bufferCodigos = new Map();
 const tiempoMinimo = 1500; // Reducido de 2000 a 1500ms
@@ -103,12 +102,12 @@ function iniciarQuagga() {
         decoder: {
             readers: [
                 "code_128_reader",
-                "ean_reader" // Agregamos de vuelta para mayor compatibilidad
+                "ean_reader"
             ],
             multiple: false
         },
         locate: true,
-        frequency: 8 // Aumentamos un poco la frecuencia
+        frequency: 8
     }, function(err) {
         if (err) {
             console.error('Quagga init error:', err);
@@ -134,7 +133,7 @@ function iniciarQuagga() {
                 }, 0) / result.codeResult.decodedCodes.length;
 
                 if (quality > (1 - calificarMinimo)) {
-                    return; // Calidad demasiado baja
+                    return;
                 }
             }
 
@@ -144,14 +143,14 @@ function iniciarQuagga() {
             code = code.toString().trim();
 
             // Validaciones básicas
-            if (code.length < 4) return; // Reducido de 6 a 4
+            if (code.length < 4) return;
 
             // Validación específica por formato (más permisiva)
             if (formato === 'code_128' && (code.length < 4 || code.length > 48)) return;
             if (formato === 'ean_13' && code.length !== 13) return;
             if (formato === 'ean' && (code.length < 8 || code.length > 13)) return;
 
-            const formatosPermitidos = ["code_128", "ean_13", "ean"];
+            const formatosPermitidos = ["code_128", "ean"];
             if (!formatosPermitidos.includes(formato)) return;
 
             const tiempoActual = Date.now();
@@ -170,11 +169,9 @@ function iniciarQuagga() {
                 buffer.contador++;
                 buffer.ultimoTiempo = tiempoActual;
                 
-                // Verificar si ha pasado suficiente tiempo y tenemos suficientes lecturas
                 if (buffer.contador >= contadorMinimo && 
                     (tiempoActual - ultimoCodigoTiempo) > tiempoMinimo) {
                     
-                    // LLAMAR A TU FUNCIÓN ORIGINAL CON SOLO UN PARÁMETRO
                     procesarCodigo(code);
                     ultimoCodigoTiempo = tiempoActual;
                     
@@ -195,10 +192,8 @@ function iniciarQuagga() {
         }
     });
 
-    // Agregar evento para limpiar buffers cuando se pierda el foco
     Quagga.onProcessed(function(result) {
         if (!result || !result.codeResult) {
-            // Limpiar buffer gradualmente cuando no hay detección
             if (bufferCodigos.size > 0 && Math.random() < 0.15) {
                 const ahora = Date.now();
                 for (let [clave, buffer] of bufferCodigos.entries()) {
