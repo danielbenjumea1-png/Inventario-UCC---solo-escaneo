@@ -103,7 +103,6 @@ function iniciarQuagga() {
         decoder: {
             readers: [
                 "code_128_reader",
-                "ean_13_reader",
                 "ean_reader" // Agregamos de vuelta para mayor compatibilidad
             ],
             multiple: false
