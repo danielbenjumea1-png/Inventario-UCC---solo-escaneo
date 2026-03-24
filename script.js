@@ -6,9 +6,6 @@ let excelInicialCargado = false;
 let quaggaIniciado = false;
 let bufferCodigo = null;
 let contador = 0;
-let ultimaLectura = 0;
-const MIN_CONFIDENCE = 3.8; // Umbral ultra estricto
-const TIEMPO_DEBOUNCE = 1200; // 1.2 segundos entre lecturas
 
 // ---------- CARGA EXCEL INICIAL ---------- ESTO ES OPCIONAL; PARA INVENTARIOS CORTOS CON EXCEL YA AGREGADO PARA RECONOCIMIENTO DE CODIGOS; CRUCE AUTOMATICO
 async function cargarExcelInicial() {
