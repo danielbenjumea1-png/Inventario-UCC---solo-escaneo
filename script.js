@@ -150,7 +150,7 @@ function iniciarQuagga() {
             if (formato === 'ean_13' && code.length !== 13) return;
             if (formato === 'ean' && (code.length < 8 || code.length > 13)) return;
 
-            const formatosPermitidos = ["code_128", "ean"];
+            const formatosPermitidos = ["code_128", "ean_13", "ean"];
             if (!formatosPermitidos.includes(formato)) return;
 
             const tiempoActual = Date.now();
